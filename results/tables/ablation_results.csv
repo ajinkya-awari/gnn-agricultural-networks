@@ -1,0 +1,7 @@
+Variant,Test F1 (%),Test Acc (%),Best Epoch
+GCN-2L (base),47.18,49.00,73
+GCN-1L,39.29,40.00,56
+GCN-3L,34.72,41.00,1
+GCN-4L,51.95,53.00,84
+SAGE-2L,62.86,63.00,121
+GCN-2L + Residual,51.37,54.00,96

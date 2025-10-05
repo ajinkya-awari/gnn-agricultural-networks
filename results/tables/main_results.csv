@@ -1,0 +1,5 @@
+Model,Test Accuracy (%),Test F1 (Macro %),Parameters,Best Epoch,Training Time (s)
+MLP (Baseline),52.00,51.16,"18,691",82,2.2
+GCN,56.00,51.63,"1,923",130,4.0
+GraphSAGE,64.00,63.98,"3,459",118,3.2
+GAT,40.00,39.88,"2,185",114,5.7
