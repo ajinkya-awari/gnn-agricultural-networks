@@ -185,6 +185,10 @@ Python 3.9 or higher. No GPU required — all experiments run on CPU.
 
 ### Installation
 
+> **Reproducibility Note**: Results may vary slightly due to random seed
+> initialisation. For deterministic output, ensure `torch.manual_seed(42)`
+> is set at the top of each script.
+
 ```bash
 # 1. Install PyTorch (CPU)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
@@ -272,7 +276,20 @@ The earlier work addressed classification of disease in individual plant images.
 ```
 
 ---
+## Limitations and Future Work
 
+- **Synthetic data**: The farm graph is procedurally generated with a simulated infection kernel.
+  Results have not yet been validated on real-world crop disease datasets (e.g. PlantVillage).
+- **GAT underperformance**: GAT's attention mechanism did not provide gains on this topology,
+  likely due to uniform degree distribution. Further tuning of attention heads and dropout is needed.
+- **Static graph**: The current model treats the graph as fixed. Real disease spread is temporal 
+  a future direction is extending this to a temporal GNN (e.g. T-GNN or EvolveGCN).
+- **Single region**: Experiments use one synthetic region. Multi-region heterogeneous graphs
+  with varying climate zones remain unexplored.
+- **No federated training**: GraphSAGE's inductive capability suggests federated deployment
+  across farm cooperatives, but this has not been implemented.
+
+---
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
