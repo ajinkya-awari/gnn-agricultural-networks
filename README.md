@@ -14,9 +14,9 @@
 
 Plant disease detection from individual images is well-studied, but modelling the **spatial propagation** of disease across connected agricultural regions remains an open problem. This work frames crop disease spread as a **node classification task on a spatial graph**, where farms are nodes carrying agronomic features (crop type, soil moisture, temperature, rainfall, pesticide usage) and edges encode geographic proximity.
 
-We implement and systematically compare three GNN architectures — **GCN**, **GraphSAGE**, and **GAT** — against an MLP baseline that ignores graph structure. GraphSAGE achieves **64.0% macro-F1**, a **+12.8 point improvement** over the graph-unaware MLP baseline (51.2%), confirming that neighbourhood aggregation captures the spatial propagation signal. The study includes optimisation convergence analysis, a controlled ablation over network depth, aggregation function, and residual connections, and a scalability evaluation on graphs ranging from 200 to 5,000 nodes where GraphSAGE reaches **78.0% F1** at the 1,000-node scale.
+We implement and systematically compare three GNN architectures — **GCN**, **GraphSAGE**, and **GAT** — against an MLP baseline that ignores graph structure. GraphSAGE achieves **64.0% macro-F1**, a **+12.8 point improvement** over the graph-unaware MLP baseline (51.2%), confirming that neighbourhood aggregation captures the spatial propagation  signal at meaningful scales, with the advantage diminishing on very small  graphs (200 nodes) where neighbourhood overlap reduces feature diversity. The study includes optimisation convergence analysis, a controlled ablation over network depth, aggregation function, and residual connections, and a scalability evaluation on graphs ranging from 200 to 5,000 nodes where GraphSAGE reaches **78.0% F1** at the 1,000-node scale.
 
-This work extends the author's published plant disease detection research ([IJARSCT, 2023](https://doi.org/10.48175/IJARSCT)) from single-image classification to a graph-theoretic propagation framework grounded in distributed optimisation principles.
+This work extends the author's published plant disease detection research ([IJARSCT, 2023](https://doi.org/10.48175/IJARSCT-9156)) from single-image classification to a graph-theoretic propagation framework grounded in distributed optimisation principles.
 
 ---
 
@@ -112,7 +112,10 @@ All models use batch normalisation, dropout (p=0.5), and are trained with Adam (
 | **GraphSAGE** | **64.00%** | **63.98%** | **3,459** | **118** |
 | GAT | 40.00% | 39.88% | 2,185 | 114 |
 
-GraphSAGE achieves the highest F1, outperforming MLP by +12.8 points. GCN shows a modest improvement over MLP with far fewer parameters. GAT underperforms on this graph topology, likely due to the relatively uniform degree distribution reducing the benefit of learned attention weights.
+GraphSAGE achieves the highest F1, outperforming MLP by +12.8 points. GCN shows a modest improvement over MLP with far fewer parameters. GAT underperforms on this graph topology. The uniform degree distribution 
+of the synthetic graph — most nodes have similar neighbourhood sizes 
+reduces the discriminative value of learned attention weights, as there 
+are few structurally distinctive nodes for attention to latch onto.
 
 ### Scalability (GraphSAGE vs MLP across graph sizes)
 
