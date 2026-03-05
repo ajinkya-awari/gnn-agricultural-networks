@@ -14,7 +14,7 @@
 
 Plant disease detection from individual images is well-studied, but modelling the **spatial propagation** of disease across connected agricultural regions remains an open problem. This work frames crop disease spread as a **node classification task on a spatial graph**, where farms are nodes carrying agronomic features (crop type, soil moisture, temperature, rainfall, pesticide usage) and edges encode geographic proximity.
 
-We implement and systematically compare three GNN architectures — **GCN**, **GraphSAGE**, and **GAT** — against an MLP baseline that ignores graph structure. GraphSAGE achieves **64.0% macro-F1**, a **+12.8 point improvement** over the graph-unaware MLP baseline (51.2%), confirming that neighbourhood aggregation captures the spatial propagation  signal at meaningful scales, with the advantage diminishing on very small  graphs (200 nodes) where neighbourhood overlap reduces feature diversity. The study includes optimisation convergence analysis, a controlled ablation over network depth, aggregation function, and residual connections, and a scalability evaluation on graphs ranging from 200 to 5,000 nodes where GraphSAGE reaches **78.0% F1** at the 1,000-node scale.
+We implement and systematically compare three GNN architectures  **GCN**, **GraphSAGE**, and **GAT**  against an MLP baseline that ignores graph structure. GraphSAGE achieves **64.0% macro-F1**, a **+12.8 point improvement** over the graph-unaware MLP baseline (51.2%), confirming that neighbourhood aggregation captures the spatial propagation  signal at meaningful scales, with the advantage diminishing on very small  graphs (200 nodes) where neighbourhood overlap reduces feature diversity. The study includes optimisation convergence analysis, a controlled ablation over network depth, aggregation function, and residual connections, and a scalability evaluation on graphs ranging from 200 to 5,000 nodes where GraphSAGE reaches **78.0% F1** at the 1,000-node scale.
 
 This work extends the author's published plant disease detection research ([IJARSCT, 2023](https://doi.org/10.48175/IJARSCT-9156)) from single-image classification to a graph-theoretic propagation framework grounded in distributed optimisation principles.
 
@@ -40,7 +40,7 @@ x_i = [ crop_type (4-d one-hot),  soil_moisture,  temperature,
 
 **Edge construction**: An edge (i, j) exists iff ‖pos_i − pos_j‖₂ < δ, with degree capped at *k* = 8 to prevent hub-dominated message passing.
 
-**Task**: Semi-supervised node classification — given labels for 60% of nodes, predict disease severity for the remaining 40%.
+**Task**: Semi-supervised node classification  given labels for 60% of nodes, predict disease severity for the remaining 40%.
 
 ---
 
@@ -92,9 +92,9 @@ Attention coefficients: `α_{ij} = softmax_j( LeakyReLU( a^T [Wh_i ‖ Wh_j] ) )
 
 | Model | Aggregation | Layers | Hidden Dim | Heads | Parameters |
 |-------|------------|--------|------------|-------|-----------|
-| MLP (Baseline) | None | 3 FC | 128 | — | 18,691 |
-| GCN | Symmetric norm | 2 GCNConv | 128 | — | 1,923 |
-| GraphSAGE | Mean pooling | 2 SAGEConv | 128 | — | 3,459 |
+| MLP (Baseline) | None | 3 FC | 128 | - | 18,691 |
+| GCN | Symmetric norm | 2 GCNConv | 128 | - | 1,923 |
+| GraphSAGE | Mean pooling | 2 SAGEConv | 128 | - | 3,459 |
 | GAT | Multi-head attention | 2 GATConv | 128 | 4 | 2,185 |
 
 All models use batch normalisation, dropout (p=0.5), and are trained with Adam (lr=0.01, weight decay=5×10⁻⁴) with class-weighted NLL loss, ReduceLROnPlateau scheduling, and early stopping (patience=50, monitored on validation macro-F1).
@@ -113,7 +113,7 @@ All models use batch normalisation, dropout (p=0.5), and are trained with Adam (
 | GAT | 40.00% | 39.88% | 2,185 | 114 |
 
 GraphSAGE achieves the highest F1, outperforming MLP by +12.8 points. GCN shows a modest improvement over MLP with far fewer parameters. GAT underperforms on this graph topology. The uniform degree distribution 
-of the synthetic graph — most nodes have similar neighbourhood sizes 
+of the synthetic graph most nodes have similar neighbourhood sizes 
 reduces the discriminative value of learned attention weights, as there 
 are few structurally distinctive nodes for attention to latch onto.
 
@@ -176,7 +176,7 @@ The graph-based advantage grows with graph size and is strongest at the 1,000–
 | **SAGE-2L** | **62.86%** | **63.00%** | **121** |
 | GCN-2L + Residual | 51.37% | 54.00% | 96 |
 
-Key findings: (1) SAGE mean aggregation outperforms GCN symmetric normalisation by +15.7 F1 points at equal depth. (2) GCN-3L collapses due to over-smoothing — a well-documented failure mode where repeated averaging causes node representations to converge. (3) Residual connections improve GCN-2L by +4.2 points, partially alleviating information loss.
+Key findings: (1) SAGE mean aggregation outperforms GCN symmetric normalisation by +15.7 F1 points at equal depth. (2) GCN-3L collapses due to over-smoothing a well-documented failure mode where repeated averaging causes node representations to converge. (3) Residual connections improve GCN-2L by +4.2 points, partially alleviating information loss.
 
 ---
 
@@ -184,7 +184,7 @@ Key findings: (1) SAGE mean aggregation outperforms GCN symmetric normalisation 
 
 ### Prerequisites
 
-Python 3.9 or higher. No GPU required — all experiments run on CPU.
+Python 3.9 or higher. No GPU required all experiments run on CPU.
 
 ### Installation
 
@@ -248,7 +248,7 @@ This project sits at the intersection of graph representation learning and distr
 
 - **Message passing as consensus**: GNN neighbourhood aggregation is structurally analogous to gossip-based consensus protocols used in decentralised SGD, where nodes iteratively exchange information with their neighbours to converge on a shared objective.
 
-- **Communication topology**: The farm graph's sparse connectivity (avg degree ~8) reflects the communication constraints studied in bandwidth-limited distributed optimisation — the convergence analysis here shows how information propagation depth (number of GNN layers) interacts with graph sparsity.
+- **Communication topology**: The farm graph's sparse connectivity (avg degree ~8) reflects the communication constraints studied in bandwidth-limited distributed optimisation  the convergence analysis here shows how information propagation depth (number of GNN layers) interacts with graph sparsity.
 
 - **Inductive deployment**: GraphSAGE's ability to generalise to unseen nodes enables federated scenarios where new farms join the monitoring network without retraining the central model, addressing data sovereignty concerns in agricultural cooperatives.
 
@@ -263,7 +263,7 @@ This project extends the author's published plant disease detection research:
 > Awari, A. et al. *Plant Disease Detection Using Machine Learning.*
 > IJARSCT, Volume 3, Issue 2 & Issue 4, April 2023.
 
-The earlier work addressed classification of disease in individual plant images. This project reformulates the problem at a regional scale — modelling how disease **spreads between farms** rather than detecting it in isolation — using a graph-theoretic framework that captures the spatial dependencies central to real-world disease management.
+The earlier work addressed the classification of disease in individual plant images. This project reformulates the problem at a regional scale, modelling how disease **spreads between farms** rather than detecting it in isolation  using a graph-theoretic framework that captures the spatial dependencies central to real-world disease management.
 
 ---
 
@@ -295,4 +295,4 @@ The earlier work addressed classification of disease in individual plant images.
 ---
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](LICENSE) for details.
