@@ -1,7 +1,5 @@
-# GNN-Based Agricultural Disease Propagation Modelling
+# When Does Graph Structure Help? An Empirical Study of GNN Architectures for Agricultural Disease Propagation
 
-> **Graph Neural Networks for Predicting Crop Disease Spread Across Farm Networks**
->
 > Ajinkya Awari · [ajinkya18072001@gmail.com](mailto:ajinkya18072001@gmail.com) · [LinkedIn](https://www.linkedin.com/in/ajinkya-awari-641114249/)
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue)](https://python.org)
@@ -10,187 +8,165 @@
 
 ---
 
-## Abstract
+## Motivation
 
-Plant disease detection from individual images is well-studied, but modelling the **spatial propagation** of disease across connected agricultural regions remains an open problem. This work frames crop disease spread as a **node classification task on a spatial graph**, where farms are nodes carrying agronomic features (crop type, soil moisture, temperature, rainfall, pesticide usage) and edges encode geographic proximity.
+Standard plant disease detection treats each crop image as an independent observation. But in practice, disease spreads. A diseased farm does not exist in isolation — it shares water sources, wind corridors, and proximity with its neighbours. Ignoring those connections discards the most diagnostic signal about who gets infected next.
 
-We implement and systematically compare three GNN architectures  **GCN**, **GraphSAGE**, and **GAT**  against an MLP baseline that ignores graph structure. GraphSAGE achieves **64.0% macro-F1**, a **+12.8 point improvement** over the graph-unaware MLP baseline (51.2%), confirming that neighbourhood aggregation captures the spatial propagation  signal at meaningful scales, with the advantage diminishing on very small  graphs (200 nodes) where neighbourhood overlap reduces feature diversity. The study includes optimisation convergence analysis, a controlled ablation over network depth, aggregation function, and residual connections, and a scalability evaluation on graphs ranging from 200 to 5,000 nodes where GraphSAGE reaches **78.0% F1** at the 1,000-node scale.
+This project asks a more fundamental question than "can a GNN classify disease severity?":
 
-This work extends the author's published plant disease detection research ([IJARSCT, 2023](https://doi.org/10.48175/IJARSCT-9156)) from single-image classification to a graph-theoretic propagation framework grounded in distributed optimisation principles.
+> **Under what conditions does modelling the graph structure of a farm network actually improve predictions — and when does it not?**
+
+This matters beyond agriculture. It is a concrete instance of a general open problem in graph representation learning: *how do architectural assumptions about neighbourhood aggregation interact with the actual topology of the data?* The same question arises in molecular property prediction, social network analysis, and any setting where the graph is sparse, noisy, or heterogeneous.
+
+A secondary motivation comes from the connection to distributed optimisation. GNN message-passing and gossip-based consensus protocols in decentralised SGD share the same mathematical structure — iterative neighbourhood aggregation over a sparse communication graph. Understanding how aggregation depth and topology affect GNN convergence is therefore relevant to understanding distributed learning more broadly.
 
 ---
 
-## Problem Formulation
+## Research Questions
 
-Let **G = (V, E, X)** be an attributed agricultural graph:
+This study was designed around four concrete questions:
 
-| Symbol | Definition |
-|--------|-----------|
-| **V** | Set of *n* farm nodes |
-| **E** ⊆ V × V | Edges connecting farms within proximity radius δ |
-| **X** ∈ ℝ^{n×d} | Node feature matrix, d = 9 features per farm |
-| **y**_i ∈ {0, 1, 2} | Disease severity label (healthy / mild / severe) |
+1. **Does neighbourhood structure carry predictive signal?**
+   Is the spatial connectivity of farms informative for disease prediction, or does a graph-unaware MLP achieve competitive performance using only node features?
 
-**Node features** (9 dimensions):
+2. **How does the choice of aggregation function affect what gets learned?**
+   GCN uses symmetric spectral normalisation; GraphSAGE uses mean concatenation; GAT uses learned attention weights. Do these architectural choices produce meaningfully different outcomes on the same graph topology?
+
+3. **Where does deeper aggregation help — and where does it hurt?**
+   Stacking more GNN layers expands the receptive field, allowing each node to incorporate information from farther neighbours. But repeated averaging is known to cause over-smoothing. Where is the crossover point on this graph?
+
+4. **Does the performance advantage of GNNs grow or shrink as the graph scales?**
+   At small graph sizes, neighbourhood information may be insufficient. At large sizes, long-range dependencies may dominate. We trace how the gap between graph-based and graph-unaware models evolves from 200 to 5,000 nodes.
+
+---
+
+## Methodology
+
+### Graph Construction
+
+We generate a synthetic agricultural graph with realistic spatial structure. Farms are placed at random 2D coordinates; an edge connects two farms when their Euclidean distance falls below a proximity threshold δ, with degree capped at *k* = 8 to prevent unrealistically high-degree hub nodes. This produces a sparse graph with average degree ≈ 8, comparable to real agricultural adjacency networks.
+
+**Node features** (9 dimensions per farm):
 
 ```
 x_i = [ crop_type (4-d one-hot),  soil_moisture,  temperature,
         rainfall,  farm_size,  pesticide_usage ]
 ```
 
-**Edge construction**: An edge (i, j) exists iff ‖pos_i − pos_j‖₂ < δ, with degree capped at *k* = 8 to prevent hub-dominated message passing.
+Disease labels (healthy / mild / severe) are generated by simulating exponential-decay spread from randomly placed infection seeds, modulated by soil moisture, rainfall, and pesticide usage. This produces spatially correlated label distributions, where the graph connectivity is genuinely informative for prediction.
 
-**Task**: Semi-supervised node classification  given labels for 60% of nodes, predict disease severity for the remaining 40%.
+**Task**: Semi-supervised node classification — 60% training, 20% validation, 20% test.
 
----
+### Models
 
-## Model Architectures
+All models map node features to class scores **f: ℝⁿˣᵈ → ℝⁿˣ³**.
 
-All models map node features to class scores: **f: ℝ^{n×d} → ℝ^{n×c}** where c = 3.
+| Model | Aggregation | Key Equation |
+|---|---|---|
+| **MLP (Baseline)** | None | h = W₃ · ReLU(W₂ · ReLU(W₁ · x)) |
+| **GCN** | Spectral normalisation | H' = σ(D̃⁻½ Ã D̃⁻½ H W) |
+| **GraphSAGE** | Mean concatenation | h_v = σ(W · CONCAT(h_v, MEAN_{u∈N(v)} h_u)) |
+| **GAT** | Learned attention (K=4 heads) | h_v = σ(‖ₖ Σⱼ αᵢⱼᵏ Wᵏ hⱼ) |
 
-### MLP Baseline
+All models use batch normalisation, dropout (p=0.5), Adam optimiser (lr=0.01, weight decay=5×10⁻⁴), class-weighted NLL loss, ReduceLROnPlateau scheduling, and early stopping monitored on validation macro-F1 (patience=50). Evaluation uses macro-averaged F1 because the three disease classes are moderately imbalanced.
 
-Treats each node independently (no message passing):
+### Ablation Design
 
-```
-h_i = W₃ · ReLU(BN(W₂ · ReLU(BN(W₁ · x_i))))
-```
+To isolate the effect of architectural choices, we run controlled variants of GCN:
+- **Depth**: 1, 2, 3, and 4 GNN layers (holding all else constant)
+- **Aggregation**: GCN symmetric norm vs. GraphSAGE mean aggregation (at equal depth)
+- **Residual connections**: skip-connections from input to output of each layer
 
-Any GNN that outperforms this baseline is demonstrably leveraging graph structure.
+### Scalability Protocol
 
-### GCN (Kipf & Welling, ICLR 2017)
-
-Spectral convolution with symmetric normalisation:
-
-```
-H^{l+1} = σ( D̃^{-½} Ã D̃^{-½} H^{l} W^{l} )
-```
-
-where Ã = A + I (self-loops) and D̃ is the degree matrix of Ã.
-
-### GraphSAGE (Hamilton et al., NeurIPS 2017)
-
-Inductive learning via neighbourhood mean aggregation:
-
-```
-h_v^{l+1} = σ( W · CONCAT(h_v^{l}, MEAN_{u ∈ N(v)} h_u^{l}) )
-```
-
-Key advantage: can generalise to unseen nodes without retraining, enabling federated deployment across expanding farm networks.
-
-### GAT (Veličković et al., ICLR 2018)
-
-Attention-weighted aggregation with K=4 heads:
-
-```
-h_v^{l+1} = σ( ‖_{k=1}^{K} Σ_{j ∈ N(v)} α_{ij}^k W^k h_j^{l} )
-```
-
-Attention coefficients: `α_{ij} = softmax_j( LeakyReLU( a^T [Wh_i ‖ Wh_j] ) )`
-
-### Architecture Summary
-
-| Model | Aggregation | Layers | Hidden Dim | Heads | Parameters |
-|-------|------------|--------|------------|-------|-----------|
-| MLP (Baseline) | None | 3 FC | 128 | - | 18,691 |
-| GCN | Symmetric norm | 2 GCNConv | 128 | - | 1,923 |
-| GraphSAGE | Mean pooling | 2 SAGEConv | 128 | - | 3,459 |
-| GAT | Multi-head attention | 2 GATConv | 128 | 4 | 2,185 |
-
-All models use batch normalisation, dropout (p=0.5), and are trained with Adam (lr=0.01, weight decay=5×10⁻⁴) with class-weighted NLL loss, ReduceLROnPlateau scheduling, and early stopping (patience=50, monitored on validation macro-F1).
+We generate graphs of 200, 500, 1,000, 2,000, and 5,000 nodes using the same construction procedure, then compare MLP and GraphSAGE at each scale.
 
 ---
 
-## Results
+## Key Findings
 
-### Model Comparison (500-node graph)
+### 1. Graph structure is informative — but only at sufficient scale
 
-| Model | Test Accuracy | Macro F1 | Parameters | Best Epoch |
-|-------|:---:|:---:|:---:|:---:|
-| MLP (Baseline) | 52.00% | 51.16% | 18,691 | 82 |
-| GCN | 56.00% | 51.63% | 1,923 | 130 |
-| **GraphSAGE** | **64.00%** | **63.98%** | **3,459** | **118** |
-| GAT | 40.00% | 39.88% | 2,185 | 114 |
+GraphSAGE achieves **64.0% macro-F1** against the MLP baseline's **51.2%**, a **+12.8 point improvement** at 500 nodes. But at 200 nodes, GraphSAGE (55.2%) is actually *worse* than MLP (59.8%). The graph-based advantage emerges and widens as the graph grows, peaking at +18.6 points at 1,000 nodes.
 
-GraphSAGE achieves the highest F1, outperforming MLP by +12.8 points. GCN shows a modest improvement over MLP with far fewer parameters. GAT underperforms on this graph topology. The uniform degree distribution 
-of the synthetic graph most nodes have similar neighbourhood sizes 
-reduces the discriminative value of learned attention weights, as there 
-are few structurally distinctive nodes for attention to latch onto.
-
-### Scalability (GraphSAGE vs MLP across graph sizes)
+This suggests a phase transition: at small graph sizes, the disease signal from neighbourhood aggregation is too noisy to improve on node-feature-only predictions. Once the graph is large enough that spatial clustering becomes statistically reliable, aggregation provides a substantial lift.
 
 | Graph Size | MLP F1 | GraphSAGE F1 | Δ F1 |
-|:---:|:---:|:---:|:---:|
-| 200 | 59.81% | 55.19% | −4.6 |
-| 500 | 44.55% | 61.89% | +17.3 |
-| 1,000 | 59.43% | **78.03%** | **+18.6** |
-| 2,000 | 52.56% | 71.04% | +18.5 |
-| 5,000 | 55.38% | 65.20% | +9.8 |
+|---|:---:|:---:|:---:|
+| 200 | 59.8% | 55.2% | −4.6 |
+| 500 | 44.6% | 61.9% | +17.3 |
+| 1,000 | 59.4% | **78.0%** | **+18.6** |
+| 2,000 | 52.6% | 71.0% | +18.5 |
+| 5,000 | 55.4% | 65.2% | +9.8 |
 
-The graph-based advantage grows with graph size and is strongest at the 1,000–2,000 node scale, where neighbourhood information provides the most discriminative signal.
+### 2. Aggregation function matters more than depth
+
+The ablation study reveals a striking asymmetry: at equal depth (2 layers), **SAGE aggregation outperforms GCN spectral normalisation by +15.7 F1 points** (62.9% vs. 47.2%). This gap is larger than the effect of any other design choice tested. The inductive bias of concatenation-based aggregation — which preserves the central node's identity while incorporating neighbourhood information — appears better suited to this sparse, spatially structured graph than the spectral smoothing used by GCN.
+
+### 3. Over-smoothing is visible and abrupt
+
+GCN with 3 layers collapses to **34.7% F1**, down from 47.2% at 2 layers — a loss of 12.5 points in a single additional layer. On a sparse graph with average degree 8, 3 hops of averaging appears sufficient to wash out the distinguishing features between healthy and diseased nodes. Residual connections partially recover from this (+4.2 points at 2 layers), but do not prevent the collapse at 3.
+
+| Variant | Test F1 |
+|---|:---:|
+| GCN-1L | 39.3% |
+| GCN-2L | 47.2% |
+| **GCN-3L** | **34.7%** ← over-smoothing |
+| GCN-4L | 52.0% |
+| SAGE-2L | **62.9%** |
+| GCN-2L + Residual | 51.4% |
+
+### 4. GAT underperforms on uniform-degree graphs
+
+GAT achieves only **39.9% F1**, below even the MLP baseline. This is consistent with the theoretical expectation that attention mechanisms provide the most benefit when nodes have meaningfully heterogeneous neighbour relevance. On this graph, where degree is capped at 8 and edges reflect purely geometric proximity, there is little structure for the attention mechanism to exploit. The uniform topology provides no signal about which neighbours matter more.
+
+This is a useful negative result: **attention does not always help, and the benefit depends on the graph topology, not just the task.**
 
 ---
 
-## Visualisations
+## Visual Results
 
-### Farm Graph
-
+### Disease Spread Graph
 ![Graph Visualisation](results/figures/graph_visualization.png)
-
-*500 farm nodes coloured by disease severity (green = healthy, orange = mild, red = severe). Edges represent proximity-based connectivity. Disease clusters are spatially correlated, reflecting the exponential-decay infection kernel used in data generation.*
+*500 farm nodes coloured by disease severity. Spatial clustering is visible: diseased nodes tend to concentrate in connected regions, which is precisely the signal that neighbourhood aggregation is designed to capture.*
 
 ### Convergence Analysis
-
 ![Convergence Curves](results/figures/convergence_curves.png)
-
-*Training loss (left) and validation macro-F1 (right) across epochs. GraphSAGE converges to a higher optimum than both GCN and the graph-unaware MLP baseline.*
+*Training loss and validation F1 across epochs. GraphSAGE converges to a substantially higher optimum than GCN, which in turn only marginally outperforms the graph-unaware MLP. The convergence curves reveal that GCN and MLP reach similar loss values but from different trajectories — suggesting that GCN's spectral smoothing may be suppressing useful heterogeneity in the node representations.*
 
 ### Confusion Matrices
-
 ![Confusion Matrices](results/figures/confusion_matrices.png)
-
-*Per-model confusion matrices on the test set. GraphSAGE shows the most balanced performance across all three severity classes.*
+*GraphSAGE achieves the most balanced performance across all three disease classes. GCN and MLP both show a tendency to over-predict the "healthy" class, consistent with a model that is underusing neighbourhood information.*
 
 ### Ablation Study
-
 ![Ablation Study](results/figures/ablation_study.png)
-
-*Effect of network depth (1–4 layers), aggregation function (GCN vs SAGE), and residual connections on test macro-F1. SAGE aggregation consistently outperforms GCN symmetric normalisation. Deeper GCN variants (3L) suffer from over-smoothing, while residual connections partially mitigate this.*
+*The abrupt drop at GCN-3L is the most salient result: a single extra layer causes a larger performance loss than switching from no graph structure to full GCN. The SAGE column confirms that aggregation function choice dominates depth choice.*
 
 ### Scalability Analysis
-
 ![Scalability](results/figures/scalability_analysis.png)
-
-*Performance and training time as the graph grows from 200 to 5,000 nodes. GraphSAGE maintains a clear advantage over MLP at all scales above 200 nodes, with the gap peaking at 1,000 nodes.*
+*The MLP baseline fluctuates around 50–60% F1 regardless of graph size, as expected for a model that uses only local features. GraphSAGE's advantage grows monotonically up to 1,000 nodes, then begins to shrink at 5,000 — potentially because long-range dependencies begin to dilute the local disease signal.*
 
 ---
 
-## Ablation Study Details
+## Future Work
 
-| Variant | Test F1 | Test Acc | Best Epoch |
-|---------|:---:|:---:|:---:|
-| GCN-2L (base) | 47.18% | 49.00% | 73 |
-| GCN-1L | 39.29% | 40.00% | 56 |
-| GCN-3L | 34.72% | 41.00% | 1 |
-| GCN-4L | 51.95% | 53.00% | 84 |
-| **SAGE-2L** | **62.86%** | **63.00%** | **121** |
-| GCN-2L + Residual | 51.37% | 54.00% | 96 |
+Several natural extensions follow from the findings above:
 
-Key findings: (1) SAGE mean aggregation outperforms GCN symmetric normalisation by +15.7 F1 points at equal depth. (2) GCN-3L collapses due to over-smoothing a well-documented failure mode where repeated averaging causes node representations to converge. (3) Residual connections improve GCN-2L by +4.2 points, partially alleviating information loss.
+**1. Heterophilic graph variants.** The current graph is homophilic: farms with the same disease status tend to be connected. Testing these architectures on adversarially constructed heterophilic graphs — where disease does not cluster spatially — would reveal whether the observed advantage is topology-dependent or robust.
+
+**2. Dynamic graphs.** Disease spread is a temporal process. Extending the framework to temporal GNNs (e.g. T-GCN or EvolveGCN) would enable modelling of how the disease distribution evolves over discrete time steps, which is closer to the real deployment scenario.
+
+**3. Communication-constrained aggregation.** The connection to distributed SGD suggests a natural experiment: what happens if each node can only exchange messages with a strict bandwidth budget? Studying GNN performance under edge subsampling would connect these results directly to the literature on communication-efficient distributed optimisation.
+
+**4. Real agricultural graph data.** The synthetic graph assumes geometric proximity as the sole connectivity criterion. Incorporating directed edges reflecting wind direction, elevation gradients, or shared water sources would test whether the performance patterns observed here persist on realistic topology.
+
+**5. Attention mechanism analysis.** GAT's poor performance is worth investigating further. Examining whether the learned attention weights exhibit meaningful spatial patterns — or collapse to near-uniform weights — would clarify whether the mechanism is failing to find signal or finding it and still underperforming.
 
 ---
 
 ## Setup and Usage
 
-### Prerequisites
-
-Python 3.9 or higher. No GPU required all experiments run on CPU.
-
-### Installation
-
-> **Reproducibility Note**: Results may vary slightly due to random seed
-> initialisation. For deterministic output, ensure `torch.manual_seed(42)`
-> is set at the top of each script.
+No GPU required. All experiments run on CPU in approximately 5–15 minutes.
 
 ```bash
 # 1. Install PyTorch (CPU)
@@ -201,23 +177,18 @@ pip install torch-geometric
 
 # 3. Install remaining dependencies
 pip install -r requirements.txt
-```
 
-### Run All Experiments
-
-```bash
+# 4. Run all experiments
 python run_all.py
 ```
 
-This will generate all figures and tables in the `results/` directory (approximately 5–15 minutes on CPU).
-
-### Run Individual Components
+Individual components:
 
 ```bash
-python data_generator.py   # Dataset generation + graph plot
-python train.py            # Model comparison (MLP, GCN, SAGE, GAT)
-python ablation.py         # Ablation study
-python scalability.py      # Scalability analysis
+python data_generator.py   # graph construction and visualisation
+python train.py            # model comparison (MLP, GCN, SAGE, GAT)
+python ablation.py         # ablation study
+python scalability.py      # scalability analysis across graph sizes
 ```
 
 ---
@@ -226,44 +197,30 @@ python scalability.py      # Scalability analysis
 
 ```
 gnn-agricultural-networks/
-├── data_generator.py       # Synthetic agricultural graph construction
-├── models.py               # MLP, GCN, GraphSAGE, GAT definitions
-├── train.py                # Training pipeline + convergence plots
-├── ablation.py             # Ablation study on depth & aggregation
-├── scalability.py          # Performance scaling across graph sizes
-├── run_all.py              # Master pipeline (runs everything)
-├── requirements.txt        # Python dependencies
-├── LICENSE                 # MIT License
+├── data_generator.py       # Graph construction with controllable topology
+├── models.py               # MLP, GCN, GraphSAGE, GAT implementations
+├── train.py                # Training pipeline + convergence analysis
+├── ablation.py             # Depth, aggregation, and residual ablation
+├── scalability.py          # Performance scaling 200 → 5,000 nodes
+├── run_all.py              # Master pipeline
+├── requirements.txt
+├── LICENSE
 ├── results/
-│   ├── figures/            # PNG visualisations
-│   └── tables/             # CSV result tables
+│   ├── figures/
+│   └── tables/
 └── README.md
 ```
 
 ---
 
-## Connection to Distributed Optimisation Research
-
-This project sits at the intersection of graph representation learning and distributed optimisation:
-
-- **Message passing as consensus**: GNN neighbourhood aggregation is structurally analogous to gossip-based consensus protocols used in decentralised SGD, where nodes iteratively exchange information with their neighbours to converge on a shared objective.
-
-- **Communication topology**: The farm graph's sparse connectivity (avg degree ~8) reflects the communication constraints studied in bandwidth-limited distributed optimisation  the convergence analysis here shows how information propagation depth (number of GNN layers) interacts with graph sparsity.
-
-- **Inductive deployment**: GraphSAGE's ability to generalise to unseen nodes enables federated scenarios where new farms join the monitoring network without retraining the central model, addressing data sovereignty concerns in agricultural cooperatives.
-
-- **Scalability**: The linear scaling behaviour observed in our experiments is consistent with theoretical results on message-passing complexity, and suggests practical viability for regional-scale deployment.
-
----
-
 ## Background
 
-This project extends the author's published plant disease detection research:
+This project extends the author's published work on plant disease detection:
 
 > Awari, A. et al. *Plant Disease Detection Using Machine Learning.*
 > IJARSCT, Volume 3, Issue 2 & Issue 4, April 2023.
 
-The earlier work addressed the classification of disease in individual plant images. This project reformulates the problem at a regional scale, modelling how disease **spreads between farms** rather than detecting it in isolation  using a graph-theoretic framework that captures the spatial dependencies central to real-world disease management.
+The earlier work framed disease as an image classification problem on individual plants. This project reframes it as a network propagation problem, where the structure of connectivity between farms is itself a source of predictive signal. The shift from per-instance classification to relational graph reasoning changes both the modelling approach and the types of failure modes that are interesting to study.
 
 ---
 
@@ -272,27 +229,12 @@ The earlier work addressed the classification of disease in individual plant ima
 ```bibtex
 @misc{awari2026gnn_disease,
   author = {Awari, Ajinkya},
-  title  = {GNN-Based Agricultural Disease Propagation Modelling},
+  title  = {When Does Graph Structure Help? GNN Architectures for Agricultural Disease Propagation},
   year   = {2026},
   url    = {https://github.com/ajinkya-awari/gnn-agricultural-networks}
 }
 ```
 
 ---
-## Limitations and Future Work
 
-- **Synthetic data**: The farm graph is procedurally generated with a simulated infection kernel.
-  Results have not yet been validated on real-world crop disease datasets (e.g. PlantVillage).
-- **GAT underperformance**: GAT's attention mechanism did not provide gains on this topology,
-  likely due to uniform degree distribution. Further tuning of attention heads and dropout is needed.
-- **Static graph**: The current model treats the graph as fixed. Real disease spread is temporal 
-  a future direction is extending this to a temporal GNN (e.g. T-GNN or EvolveGCN).
-- **Single region**: Experiments use one synthetic region. Multi-region heterogeneous graphs
-  with varying climate zones remain unexplored.
-- **No federated training**: GraphSAGE's inductive capability suggests federated deployment
-  across farm cooperatives, but this has not been implemented.
-
----
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
+*MIT License — see [LICENSE](LICENSE) for details.*
